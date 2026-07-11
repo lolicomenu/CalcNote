@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#16181d">
+<title>NoteCalc</title>
+<style>
+  :root{
+    --lh: 32px;
+    --fs: 17px;
+    --pad: 14px;
+    --bg: #16181d;
+    --panel: #1e2128;
+    --line: #2a2e37;
+    --text: #e6e8ec;
+    --muted: #7c8391;
+    --accent: #63d0a0;
+    --error: #e06a6a;
+    --gutter-w: 128px;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:-apple-system,"Roboto","Noto Sans JP",sans-serif; overflow:hidden; }
+  #app{ display:flex; flex-direction:column; height:100vh; height:100dvh; }
+
+  header{
+    display:flex; align-items:center; gap:8px;
+    padding:10px 14px; background:var(--panel);
+    border-bottom:1px solid var(--line); flex:0 0 auto;
+  }
+  header .brand{ font-weight:700; font-size:16px; letter-spacing:.3px; }
+  header .brand span{ color:var(--accent); }
+  header .spacer{ flex:1; }
+  header button{
+    background:transparent; color:var(--muted); border:1px solid var(--line);
+    border-radius:8px; padding:6px 10px; font-size:13px; cursor:pointer;
+  }
+  header button:active{ background:var(--line); color:var(--text); }
+
+  #editorArea{ position:relative; flex:1 1 auto; overflow:hidden; }
+  #editor, #gutter{
+    position:absolute; top:0; height:100%; margin:0;
+    font-family:"SFMono-Regular","Roboto Mono","Menlo",monospace;
+    font-size:var(--fs); line-height:var(--lh);
+    padding:var(--pad) 0; border:0; outline:none;
+  }
+  #editor{
+    left:0; right:var(--gutter-w); width:calc(100% - var(--gutter-w));
+    padding-left:16px; padding-right:10px;
+    background:transparent; color:var(--text);
+    white-space:pre; overflow:auto; resize:none;
+    caret-color:var(--accent); tab-size:4;
+  }
+  #gutter{
+    right:0; width:var(--gutter-w);
+    padding:0;
+    background:linear-gradient(90deg, transparent, rgba(0,0,0,.12) 24%);
+    border-left:1px solid var(--line);
+    overflow:hidden; pointer-events:none;
+    text-align:right; white-space:nowrap;
+  }
+  #gutterInner{ padding:var(--pad) 16px var(--pad) 8px; will-change:transform; }
+  .rrow{ height:var(--lh); line-height:var(--lh); overflow:hidden;
+    text-overflow:ellipsis; color:var(--accent); }
+  .rrow.err{ color:var(--error); font-size:13px; }
+  .rrow.blank{ color:transparent; }
+
+  footer{
+    flex:0 0 auto; display:flex; align-items:center; gap:12px;
+    padding:6px 14px; background:var(--panel);
+    border-top:1px solid var(--line); font-size:12px; color:var(--muted);
+  }
+  footer .grow{ flex:1; }
+  footer b{ color:var(--text); }
+
+  /* keypad */
+  #keypad{
+    flex:0 0 auto; background:var(--panel); border-top:1px solid var(--line);
+    padding:6px; user-select:none; -webkit-user-select:none;
+  }
+  #keypad.hidden{ display:none; }
+  #keypad .krow{ display:flex; gap:6px; margin-bottom:6px; }
+  #keypad .krow:last-child{ margin-bottom:0; }
+  #keypad button{
+    flex:1 1 0; min-width:0; height:46px; border:0; border-radius:10px;
+    background:#2a2e37; color:var(--text); font-size:19px; font-weight:500;
+    font-family:inherit; cursor:pointer; touch-action:manipulation;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #keypad button:active{ background:#3a3f4b; }
+  #keypad button.util{ height:38px; background:#242832; color:var(--muted);
+    font-size:14px; font-weight:400; }
+  #keypad button.op{ background:#2f3540; color:var(--accent); font-size:20px; }
+  #keypad button.act{ background:var(--accent); color:#06231a; font-weight:700; }
+  #keypad button.abc.on{ background:var(--accent); color:#06231a; }
+
+  /* help overlay */
+  #help{ position:absolute; inset:0; background:rgba(0,0,0,.55);
+    display:none; align-items:center; justify-content:center; padding:18px; z-index:20; }
+  #help.open{ display:flex; }
+  #help .card{ background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    max-width:460px; width:100%; max-height:80%; overflow:auto; padding:18px 20px; }
+  #help h2{ margin:0 0 10px; font-size:16px; }
+  #help table{ width:100%; border-collapse:collapse; font-size:13px; }
+  #help td{ padding:5px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  #help td.k{ color:var(--accent); font-family:monospace; white-space:nowrap; }
+  #help .close{ margin-top:14px; width:100%; padding:10px; border-radius:9px;
+    background:var(--accent); color:#06231a; border:0; font-weight:700; font-size:14px; }
+</style>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icon-192.png">
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">Note<span>Calc</span></div>
+    <div class="spacer"></div>
+    <button id="btnMode">ABC</button>
+    <button id="btnHelp">使い方</button>
+    <button id="btnClear">クリア</button>
+  </header>
+
+  <div id="editorArea">
+    <textarea id="editor" spellcheck="false" autocomplete="off"
+      autocapitalize="off" autocorrect="off" wrap="off"
+      inputmode="none" placeholder="1行に1つの式を入力…"></textarea>
+    <div id="gutter" aria-hidden="true"><div id="gutterInner"></div></div>
+  </div>
+
+  <footer>
+    <span>合計 <b id="statSum">0</b></span>
+    <span class="grow"></span>
+    <span id="statLines">0 行</span>
+  </footer>
+
+  <div id="keypad">
+    <div class="krow">
+      <button class="util abc" data-mode="1">ABC</button>
+      <button class="util" data-ins="sqrt(">&#8730;</button>
+      <button class="util" data-ins="^">x^</button>
+      <button class="util" data-caret="-1">&#9664;</button>
+      <button class="util" data-caret="1">&#9654;</button>
+      <button class="util" data-back="1">&#9003;</button>
+    </div>
+    <div class="krow">
+      <button data-ins="7">7</button>
+      <button data-ins="8">8</button>
+      <button data-ins="9">9</button>
+      <button class="op" data-ins="(">(</button>
+      <button class="op" data-ins=")">)</button>
+    </div>
+    <div class="krow">
+      <button data-ins="4">4</button>
+      <button data-ins="5">5</button>
+      <button data-ins="6">6</button>
+      <button class="op" data-ins="*">&#215;</button>
+      <button class="op" data-ins="/">&#247;</button>
+    </div>
+    <div class="krow">
+      <button data-ins="1">1</button>
+      <button data-ins="2">2</button>
+      <button data-ins="3">3</button>
+      <button class="op" data-ins="+">+</button>
+      <button class="op" data-ins="-">&#8722;</button>
+    </div>
+    <div class="krow">
+      <button data-ins="0">0</button>
+      <button data-ins="00">00</button>
+      <button data-ins=".">.</button>
+      <button class="op" data-ins="%">%</button>
+      <button class="act" data-newline="1">&#8629;</button>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="card">
+      <h2>NoteCalc の使い方</h2>
+      <table>
+        <tr><td class="k">1 + 2 * 3</td><td>四則演算・括弧・^（べき乗）</td></tr>
+        <tr><td class="k">1000 + 8%</td><td>パーセント加算（→1080）</td></tr>
+        <tr><td class="k">x = 5</td><td>変数に代入</td></tr>
+        <tr><td class="k">L1 + L2</td><td>行番号で参照（L1=1行目の結果）</td></tr>
+        <tr><td class="k">prev / ans</td><td>直前の結果を参照</td></tr>
+        <tr><td class="k">sum</td><td>すぐ上の連続する数値の合計</td></tr>
+        <tr><td class="k">avg</td><td>同ブロックの平均</td></tr>
+        <tr><td class="k">sqrt(2)</td><td>関数: sqrt sin cos tan log ln exp abs round floor ceil min max mod ほか</td></tr>
+        <tr><td class="k">pi , e</td><td>定数</td></tr>
+        <tr><td class="k">// メモ</td><td>コメント（# も可）</td></tr>
+        <tr><td class="k">ABC</td><td>キーを押すと日本語入力用のキーボードに切替</td></tr>
+      </table>
+      <button class="close" id="btnHelpClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== NoteCalc engine (inlined) ===== */
+(function (root) {
+  'use strict';
+  function tokenize(src) {
+    var tokens = [];
+    var i = 0, n = src.length;
+    var isDigit = function (c) { return c >= '0' && c <= '9'; };
+    var isAlpha = function (c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_'; };
+    var isAlnum = function (c) { return isAlpha(c) || isDigit(c); };
+    while (i < n) {
+      var c = src[i];
+      if (c === ' ' || c === '\t') { i++; continue; }
+      if (isDigit(c) || (c === '.' && isDigit(src[i + 1]))) {
+        var start = i;
+        var raw = '';
+        while (i < n && (isDigit(src[i]) || src[i] === '.' || src[i] === '_' ||
+                (( src[i] === 'e' || src[i] === 'E') && (isDigit(src[i+1]) || src[i+1] === '+' || src[i+1] === '-')))) {
+          if (src[i] === '_') { i++; continue; }
+          if (src[i] === 'e' || src[i] === 'E') {
+            raw += src[i++];
+            if (src[i] === '+' || src[i] === '-') raw += src[i++];
+            continue;
+          }
+          raw += src[i++];
+        }
+        tokens.push({ t: 'num', v: parseFloat(raw), raw: src.slice(start, i) });
+        continue;
+      }
+      if (isAlpha(c)) {
+        var s = i;
+        while (i < n && isAlnum(src[i])) i++;
+        tokens.push({ t: 'id', v: src.slice(s, i) });
+        continue;
+      }
+      if ('+-*/^%(),'.indexOf(c) !== -1) { tokens.push({ t: 'op', v: c }); i++; continue; }
+      throw new Error('unexpected "' + c + '"');
+    }
+    tokens.push({ t: 'eof' });
+    return tokens;
+  }
+  function parse(tokens) {
+    var pos = 0;
+    var peek = function () { return tokens[pos]; };
+    var next = function () { return tokens[pos++]; };
+    var eat = function (v) { var tk = tokens[pos]; if (tk.t === 'op' && tk.v === v) { pos++; return true; } return false; };
+    function parseExpr() { return parseAddSub(); }
+    function parseAddSub() {
+      var node = parseMulDiv();
+      while (true) {
+        var tk = peek();
+        if (tk.t === 'op' && (tk.v === '+' || tk.v === '-')) { next(); node = { k: 'bin', op: tk.v, a: node, b: parseMulDiv() }; }
+        else break;
+      }
+      return node;
+    }
+    function parseMulDiv() {
+      var node = parseUnary();
+      while (true) {
+        var tk = peek();
+        if (tk.t === 'op' && (tk.v === '*' || tk.v === '/')) { next(); node = { k: 'bin', op: tk.v, a: node, b: parseUnary() }; }
+        else if (tk.t === 'id' && tk.v === 'mod') { next(); node = { k: 'bin', op: 'mod', a: node, b: parseUnary() }; }
+        else break;
+      }
+      return node;
+    }
+    function parseUnary() {
+      var tk = peek();
+      if (tk.t === 'op' && (tk.v === '-' || tk.v === '+')) { next(); return { k: 'un', op: tk.v, a: parseUnary() }; }
+      return parsePower();
+    }
+    function parsePower() {
+      var base = parsePostfix();
+      var tk = peek();
+      if (tk.t === 'op' && tk.v === '^') { next(); return { k: 'bin', op: '^', a: base, b: parseUnary() }; }
+      return base;
+    }
+    function parsePostfix() {
+      var node = parsePrimary();
+      var tk = peek();
+      if (tk.t === 'op' && tk.v === '%') { next(); return { k: 'pct', a: node }; }
+      return node;
+    }
+    function parsePrimary() {
+      var tk = peek();
+      if (tk.t === 'num') { next(); return { k: 'num', v: tk.v }; }
+      if (tk.t === 'op' && tk.v === '(') { next(); var e = parseExpr(); if (!eat(')')) throw new Error('missing )'); return e; }
+      if (tk.t === 'id') {
+        next();
+        if (peek().t === 'op' && peek().v === '(') {
+          next();
+          var args = [];
+          if (!(peek().t === 'op' && peek().v === ')')) { args.push(parseExpr()); while (eat(',')) args.push(parseExpr()); }
+          if (!eat(')')) throw new Error('missing )');
+          return { k: 'call', name: tk.v, args: args };
+        }
+        return { k: 'id', v: tk.v };
+      }
+      throw new Error('unexpected end');
+    }
+    var tree = parseExpr();
+    if (peek().t !== 'eof') throw new Error('trailing input');
+    return tree;
+  }
+  var CONSTS = { pi: Math.PI, e: Math.E, tau: Math.PI * 2 };
+  var FUNCS = {
+    sqrt: Math.sqrt, cbrt: Math.cbrt, abs: Math.abs,
+    sin: Math.sin, cos: Math.cos, tan: Math.tan,
+    asin: Math.asin, acos: Math.acos, atan: Math.atan,
+    sinh: Math.sinh, cosh: Math.cosh, tanh: Math.tanh,
+    log: function (x) { return Math.log10 ? Math.log10(x) : Math.log(x) / Math.LN10; },
+    ln: Math.log,
+    log2: function (x) { return Math.log(x) / Math.LN2; },
+    exp: Math.exp,
+    round: Math.round, floor: Math.floor, ceil: Math.ceil,
+    sign: Math.sign, trunc: Math.trunc,
+    fact: function (x) { var r = 1; for (var k = 2; k <= x; k++) r *= k; return r; },
+    min: function () { return Math.min.apply(null, arguments); },
+    max: function () { return Math.max.apply(null, arguments); },
+    pow: function (a, b) { return Math.pow(a, b); },
+    mod: function (a, b) { return a % b; }
+  };
+  function evalNode(node, ctx) {
+    switch (node.k) {
+      case 'num': return node.v;
+      case 'un': { var v = evalNode(node.a, ctx); return node.op === '-' ? -v : v; }
+      case 'pct': return evalNode(node.a, ctx) / 100;
+      case 'bin': {
+        if (node.b.k === 'pct') {
+          var l = evalNode(node.a, ctx);
+          var p = evalNode(node.b.a, ctx) / 100;
+          switch (node.op) {
+            case '+': return l + l * p;
+            case '-': return l - l * p;
+            case '*': return l * p;
+            case '/': return l / p;
+          }
+        }
+        var a = evalNode(node.a, ctx);
+        var b = evalNode(node.b, ctx);
+        switch (node.op) {
+          case '+': return a + b;
+          case '-': return a - b;
+          case '*': return a * b;
+          case '/': return a / b;
+          case '^': return Math.pow(a, b);
+          case 'mod': return a % b;
+        }
+        throw new Error('bad op');
+      }
+      case 'call': {
+        var fn = FUNCS[node.name];
+        if (!fn) throw new Error('unknown fn ' + node.name);
+        var vals = node.args.map(function (x) { return evalNode(x, ctx); });
+        return fn.apply(null, vals);
+      }
+      case 'id': return resolveId(node.v, ctx);
+    }
+    throw new Error('bad node');
+  }
+  function resolveId(name, ctx) {
+    var lower = name.toLowerCase();
+    if (lower === 'sum' || lower === 'total' || lower === 'avg' || lower === 'average') {
+      var block = [];
+      for (var k = ctx.index - 1; k >= 0; k--) {
+        var r = ctx.results[k];
+        if (r == null || !r.ok || typeof r.value !== 'number') break;
+        block.push(r.value);
+      }
+      if (block.length === 0) return 0;
+      var s = block.reduce(function (x, y) { return x + y; }, 0);
+      return (lower === 'avg' || lower === 'average') ? s / block.length : s;
+    }
+    if (lower === 'prev' || lower === 'ans') {
+      for (var j = ctx.index - 1; j >= 0; j--) {
+        var rr = ctx.results[j];
+        if (rr != null && rr.ok && typeof rr.value === 'number') return rr.value;
+      }
+      throw new Error('no previous result');
+    }
+    var m = /^L(\d+)$/i.exec(name);
+    if (m) {
+      var idx = parseInt(m[1], 10) - 1;
+      var lr = ctx.results[idx];
+      if (idx < 0 || idx >= ctx.index || lr == null || !lr.ok || typeof lr.value !== 'number') throw new Error('bad ref ' + name);
+      return lr.value;
+    }
+    if (CONSTS.hasOwnProperty(lower)) return CONSTS[lower];
+    if (ctx.vars.hasOwnProperty(name)) return ctx.vars[name];
+    throw new Error('unknown "' + name + '"');
+  }
+  var ASSIGN_RE = /^\s*([A-Za-z_]\w*)\s*=\s*([^=].*)$/;
+  function stripComment(line) {
+    var idx = line.indexOf('//');
+    var hashIdx = line.indexOf('#');
+    var cut = -1;
+    if (idx !== -1) cut = idx;
+    if (hashIdx !== -1 && (cut === -1 || hashIdx < cut)) cut = hashIdx;
+    return cut === -1 ? line : line.slice(0, cut);
+  }
+  function evalLine(rawLine, ctx) {
+    var noComment = stripComment(rawLine);
+    var trimmed = noComment.trim();
+    if (trimmed === '') return { ok: true, value: null, empty: true };
+    var assign = ASSIGN_RE.exec(trimmed);
+    var name = null, exprSrc = trimmed;
+    if (assign && !CONSTS.hasOwnProperty(assign[1].toLowerCase()) && !/^L\d+$/i.test(assign[1])) {
+      name = assign[1];
+      exprSrc = assign[2];
+    }
+    try {
+      var ast = parse(tokenize(exprSrc));
+      var value = evalNode(ast, ctx);
+      if (typeof value !== 'number' || Number.isNaN(value)) return { ok: false, value: null, error: 'NaN' };
+      if (!isFinite(value)) return { ok: false, value: null, error: 'infinity' };
+      if (name) ctx.vars[name] = value;
+      return { ok: true, value: value, name: name };
+    } catch (err) {
+      return { ok: false, value: null, error: err.message };
+    }
+  }
+  function evaluate(text) {
+    var lines = String(text).split('\n');
+    var ctx = { vars: {}, results: [], index: 0 };
+    var out = [];
+    for (var i = 0; i < lines.length; i++) {
+      ctx.index = i;
+      var r = evalLine(lines[i], ctx);
+      ctx.results[i] = r;
+      out.push(r);
+    }
+    return out;
+  }
+  function formatNumber(x, opts) {
+    opts = opts || {};
+    if (x == null) return '';
+    if (!isFinite(x)) return String(x);
+    var rounded = Math.round(x * 1e10) / 1e10;
+    if (Object.is(rounded, -0)) rounded = 0;
+    var str;
+    if (Number.isInteger(rounded) && Math.abs(rounded) < 1e15) { str = rounded.toFixed(0); }
+    else {
+      str = String(rounded);
+      if (/\.\d{11,}/.test(str)) str = parseFloat(rounded.toPrecision(12)).toString();
+    }
+    if (opts.thousands !== false) {
+      var parts = str.split('.');
+      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      str = parts.join('.');
+    }
+    return str;
+  }
+  root.NoteCalc = { tokenize: tokenize, parse: parse, evaluate: evaluate, formatNumber: formatNumber };
+})(window);
+</script>
+<script>
+/* ===== NoteCalc UI ===== */
+(function(){
+  var editor = document.getElementById('editor');
+  var gutter = document.getElementById('gutterInner');
+  var statSum = document.getElementById('statSum');
+  var statLines = document.getElementById('statLines');
+  var help = document.getElementById('help');
+  var keypad = document.getElementById('keypad');
+  var btnMode = document.getElementById('btnMode');
+  var abcBtn = keypad.querySelector('.abc');
+  var STORE_KEY = 'notecalc.buffer.v1';
+
+  var SAMPLE =
+    "// NoteCalc — 1行1式で計算\n" +
+    "2 + 3 * 4\n" +
+    "\n" +
+    "// 消費税の計算\n" +
+    "price = 1980\n" +
+    "price + 10%\n" +
+    "\n" +
+    "// 割り勘\n" +
+    "total = 12800\n" +
+    "total / 4\n" +
+    "\n" +
+    "// 行を合計\n" +
+    "1200\n" +
+    "980\n" +
+    "3400\n" +
+    "sum";
+
+  function loadBuffer(){
+    try{ var s = localStorage.getItem(STORE_KEY); return (s !== null) ? s : SAMPLE; }
+    catch(e){ return SAMPLE; }
+  }
+  function saveBuffer(){ try{ localStorage.setItem(STORE_KEY, editor.value); }catch(e){} }
+
+  function render(){
+    var results = NoteCalc.evaluate(editor.value);
+    var html = '';
+    var grand = 0, count = 0;
+    for(var i=0;i<results.length;i++){
+      var r = results[i];
+      if(r.empty){ html += '<div class="rrow blank">.</div>'; continue; }
+      if(r.ok){
+        var txt = NoteCalc.formatNumber(r.value);
+        html += '<div class="rrow">'+escapeHtml(txt)+'</div>';
+        grand += r.value; count++;
+      }else{
+        html += '<div class="rrow err">?</div>';
+      }
+    }
+    gutter.innerHTML = html;
+    syncScroll();
+    statSum.textContent = NoteCalc.formatNumber(count ? grand : 0);
+    var lineCount = editor.value === '' ? 0 : editor.value.split('\n').length;
+    statLines.textContent = lineCount + ' 行';
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>]/g, function(c){
+      return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;';
+    });
+  }
+
+  function syncScroll(){ gutter.style.transform = 'translateY(' + (-editor.scrollTop) + 'px)'; }
+
+  function onInput(){ render(); saveBuffer(); }
+
+  editor.addEventListener('input', onInput);
+  editor.addEventListener('scroll', syncScroll);
+
+  editor.addEventListener('keydown', function(e){
+    if(e.key === 'Tab'){ e.preventDefault(); insertText('  '); }
+  });
+
+  var textMode = false;
+
+  function insertText(t){
+    var s = editor.selectionStart, e = editor.selectionEnd;
+    editor.value = editor.value.slice(0, s) + t + editor.value.slice(e);
+    var pos = s + t.length;
+    editor.setSelectionRange(pos, pos);
+    keepCaretVisible();
+    onInput();
+  }
+  function backspace(){
+    var s = editor.selectionStart, e = editor.selectionEnd;
+    if(s !== e){ editor.value = editor.value.slice(0, s) + editor.value.slice(e); editor.setSelectionRange(s, s); }
+    else if(s > 0){ editor.value = editor.value.slice(0, s - 1) + editor.value.slice(s); editor.setSelectionRange(s - 1, s - 1); }
+    keepCaretVisible();
+    onInput();
+  }
+  function moveCaret(d){
+    var p = Math.max(0, Math.min(editor.value.length, editor.selectionStart + d));
+    editor.setSelectionRange(p, p);
+    keepCaretVisible();
+  }
+  function keepCaretVisible(){
+    var cs = getComputedStyle(editor);
+    var lh = parseFloat(cs.lineHeight) || 32;
+    var padTop = parseFloat(cs.paddingTop) || 0;
+    var line = editor.value.slice(0, editor.selectionStart).split('\n').length - 1;
+    var caretTop = padTop + line * lh;
+    var caretBottom = caretTop + lh;
+    var viewTop = editor.scrollTop;
+    var viewBottom = viewTop + editor.clientHeight;
+    if(caretTop < viewTop){ editor.scrollTop = caretTop; }
+    else if(caretBottom > viewBottom){ editor.scrollTop = caretBottom - editor.clientHeight; }
+    syncScroll();
+  }
+  function scrollCaretIntoViewDeferred(){ keepCaretVisible(); requestAnimationFrame(keepCaretVisible); }
+
+  function setTextMode(on){
+    textMode = on;
+    editor.setAttribute('inputmode', on ? 'text' : 'none');
+    keypad.classList.toggle('hidden', on);
+    abcBtn.classList.toggle('on', on);
+    btnMode.textContent = on ? '123' : 'ABC';
+    editor.blur();
+    editor.focus();
+  }
+  function toggleMode(){ setTextMode(!textMode); }
+
+  btnMode.addEventListener('click', toggleMode);
+
+  keypad.addEventListener('pointerdown', function(e){
+    var b = e.target.closest('button');
+    if(!b) return;
+    e.preventDefault();
+    if(!textMode) editor.focus();
+    if(b.dataset.mode){ toggleMode(); return; }
+    if(b.dataset.ins != null){ insertText(b.dataset.ins); return; }
+    if(b.dataset.back){ backspace(); return; }
+    if(b.dataset.caret){ moveCaret(parseInt(b.dataset.caret, 10)); return; }
+    if(b.dataset.newline){ insertText('\n'); scrollCaretIntoViewDeferred(); return; }
+  });
+
+  document.getElementById('btnClear').addEventListener('click', function(){
+    if(editor.value.trim() === '' || confirm('ノートを消去しますか?')){
+      editor.value = '';
+      editor.setSelectionRange(0, 0);
+      if(!textMode) editor.focus();
+      onInput();
+    }
+  });
+  document.getElementById('btnHelp').addEventListener('click', function(){ help.classList.add('open'); });
+  document.getElementById('btnHelpClose').addEventListener('click', function(){ help.classList.remove('open'); });
+  help.addEventListener('click', function(e){ if(e.target === help) help.classList.remove('open'); });
+
+  editor.value = loadBuffer();
+  editor.setSelectionRange(editor.value.length, editor.value.length);
+  render();
+})();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('./sw.js').catch(function () {});
+  });
+}
+</script>
+</body>
+</html>
