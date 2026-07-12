@@ -1,4 +1,4 @@
-var CACHE = 'notecalc-v1';
+var CACHE = 'notecalc-v2';
 var ASSETS = [
   './',
   './index.html',

@@ -6,6 +6,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#16181d">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icon-192.png">
 <title>NoteCalc</title>
 <style>
   :root{
@@ -19,7 +21,7 @@
     --muted: #7c8391;
     --accent: #63d0a0;
     --error: #e06a6a;
-    --gutter-w: 128px;
+    --gutter-w: 118px;
   }
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body{ margin:0; height:100%; background:var(--bg); color:var(--text);
@@ -51,7 +53,8 @@
     left:0; right:var(--gutter-w); width:calc(100% - var(--gutter-w));
     padding-left:16px; padding-right:10px;
     background:transparent; color:var(--text);
-    white-space:pre; overflow:auto; resize:none;
+    white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;
+    overflow-x:hidden; overflow-y:auto; resize:none;
     caret-color:var(--accent); tab-size:4;
   }
   #gutter{
@@ -60,13 +63,20 @@
     background:linear-gradient(90deg, transparent, rgba(0,0,0,.12) 24%);
     border-left:1px solid var(--line);
     overflow:hidden; pointer-events:none;
-    text-align:right; white-space:nowrap;
+    text-align:right;
   }
-  #gutterInner{ padding:var(--pad) 16px var(--pad) 8px; will-change:transform; }
-  .rrow{ height:var(--lh); line-height:var(--lh); overflow:hidden;
-    text-overflow:ellipsis; color:var(--accent); }
+  #gutterInner{ padding:var(--pad) 14px var(--pad) 8px; will-change:transform; }
+  .rrow{ display:flex; align-items:flex-end; justify-content:flex-end;
+    line-height:var(--lh); color:var(--accent); overflow:hidden; }
+  .rrow span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
   .rrow.err{ color:var(--error); font-size:13px; }
-  .rrow.blank{ color:transparent; }
+
+  /* hidden mirror used to measure each logical line's wrapped height */
+  #mirror{
+    position:absolute; top:0; left:0; z-index:-1; visibility:hidden;
+    pointer-events:none; white-space:pre-wrap; overflow-wrap:anywhere;
+    word-break:break-word; box-sizing:border-box;
+  }
 
   footer{
     flex:0 0 auto; display:flex; align-items:center; gap:12px;
@@ -110,8 +120,6 @@
   #help .close{ margin-top:14px; width:100%; padding:10px; border-radius:9px;
     background:var(--accent); color:#06231a; border:0; font-weight:700; font-size:14px; }
 </style>
-<link rel="manifest" href="./manifest.webmanifest">
-<link rel="apple-touch-icon" href="./icon-192.png">
 </head>
 <body>
 <div id="app">
@@ -125,9 +133,10 @@
 
   <div id="editorArea">
     <textarea id="editor" spellcheck="false" autocomplete="off"
-      autocapitalize="off" autocorrect="off" wrap="off"
+      autocapitalize="off" autocorrect="off"
       inputmode="none" placeholder="1行に1つの式を入力…"></textarea>
     <div id="gutter" aria-hidden="true"><div id="gutterInner"></div></div>
+    <div id="mirror" aria-hidden="true"></div>
   </div>
 
   <footer>
@@ -188,6 +197,7 @@
         <tr><td class="k">avg</td><td>同ブロックの平均</td></tr>
         <tr><td class="k">sqrt(2)</td><td>関数: sqrt sin cos tan log ln exp abs round floor ceil min max mod ほか</td></tr>
         <tr><td class="k">pi , e</td><td>定数</td></tr>
+        <tr><td class="k">100+100+</td><td>末尾の記号は無視して計算（→200）</td></tr>
         <tr><td class="k">// メモ</td><td>コメント（# も可）</td></tr>
         <tr><td class="k">ABC</td><td>キーを押すと日本語入力用のキーボードに切替</td></tr>
       </table>
@@ -396,6 +406,20 @@
     if (hashIdx !== -1 && (cut === -1 || hashIdx < cut)) cut = hashIdx;
     return cut === -1 ? line : line.slice(0, cut);
   }
+  // Drop trailing operators / open-parens / commas, then balance parens.
+  // So "100+100+" -> "100+100", "(1+2" -> "(1+2)", "sqrt(2+" -> "sqrt(2)".
+  function sanitizeExpr(src) {
+    var s = src.replace(/\s+$/, '');
+    while (true) {
+      var m = /(?:\bmod\b|[+\-*/^,(])\s*$/.exec(s);
+      if (!m) break;
+      s = s.slice(0, m.index).replace(/\s+$/, '');
+    }
+    var opens = (s.match(/\(/g) || []).length;
+    var closes = (s.match(/\)/g) || []).length;
+    if (opens > closes) s = s + new Array(opens - closes + 1).join(')');
+    return s;
+  }
   function evalLine(rawLine, ctx) {
     var noComment = stripComment(rawLine);
     var trimmed = noComment.trim();
@@ -406,6 +430,8 @@
       name = assign[1];
       exprSrc = assign[2];
     }
+    exprSrc = sanitizeExpr(exprSrc);
+    if (exprSrc === '') return { ok: true, value: null, empty: true };
     try {
       var ast = parse(tokenize(exprSrc));
       var value = evalNode(ast, ctx);
@@ -456,6 +482,7 @@
 (function(){
   var editor = document.getElementById('editor');
   var gutter = document.getElementById('gutterInner');
+  var mirror = document.getElementById('mirror');
   var statSum = document.getElementById('statSum');
   var statLines = document.getElementById('statLines');
   var help = document.getElementById('help');
@@ -488,19 +515,55 @@
   }
   function saveBuffer(){ try{ localStorage.setItem(STORE_KEY, editor.value); }catch(e){} }
 
+  function escapeHtml(s){
+    return String(s).replace(/[&<>]/g, function(c){
+      return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;';
+    });
+  }
+
+  // Sync the mirror's box metrics to the editor's text box.
+  function syncMirror(){
+    var cs = getComputedStyle(editor);
+    mirror.style.width = editor.clientWidth + 'px';
+    mirror.style.paddingLeft = cs.paddingLeft;
+    mirror.style.paddingRight = cs.paddingRight;
+    mirror.style.fontFamily = cs.fontFamily;
+    mirror.style.fontSize = cs.fontSize;
+    mirror.style.lineHeight = cs.lineHeight;
+    return cs;
+  }
+
+  // Measure the wrapped pixel height of every logical line, so each
+  // result cell can match its line even when the line wraps.
+  function lineHeights(){
+    syncMirror();
+    var lines = editor.value.split('\n');
+    var html = '';
+    for(var i=0;i<lines.length;i++){
+      var t = lines[i].length ? escapeHtml(lines[i]) : '​';
+      html += '<div>'+t+'</div>';
+    }
+    mirror.innerHTML = html;
+    var kids = mirror.children, hs = [];
+    for(var j=0;j<kids.length;j++) hs.push(kids[j].offsetHeight);
+    return hs;
+  }
+
   function render(){
     var results = NoteCalc.evaluate(editor.value);
+    var hs = lineHeights();
     var html = '';
     var grand = 0, count = 0;
     for(var i=0;i<results.length;i++){
       var r = results[i];
-      if(r.empty){ html += '<div class="rrow blank">.</div>'; continue; }
+      var h = hs[i] || 32;
+      if(r.empty){ html += '<div class="rrow" style="height:'+h+'px"></div>'; continue; }
       if(r.ok){
         var txt = NoteCalc.formatNumber(r.value);
-        html += '<div class="rrow">'+escapeHtml(txt)+'</div>';
+        html += '<div class="rrow" style="height:'+h+'px"><span>'+escapeHtml(txt)+'</span></div>';
         grand += r.value; count++;
       }else{
-        html += '<div class="rrow err">?</div>';
+        html += '<div class="rrow err" style="height:'+h+'px"><span>?</span></div>';
       }
     }
     gutter.innerHTML = html;
@@ -510,18 +573,13 @@
     statLines.textContent = lineCount + ' 行';
   }
 
-  function escapeHtml(s){
-    return String(s).replace(/[&<>]/g, function(c){
-      return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;';
-    });
-  }
-
   function syncScroll(){ gutter.style.transform = 'translateY(' + (-editor.scrollTop) + 'px)'; }
 
   function onInput(){ render(); saveBuffer(); }
 
-  editor.addEventListener('input', onInput);
+  editor.addEventListener('input', function(){ onInput(); });
   editor.addEventListener('scroll', syncScroll);
+  window.addEventListener('resize', render);
 
   editor.addEventListener('keydown', function(e){
     if(e.key === 'Tab'){ e.preventDefault(); insertText('  '); }
@@ -534,28 +592,36 @@
     editor.value = editor.value.slice(0, s) + t + editor.value.slice(e);
     var pos = s + t.length;
     editor.setSelectionRange(pos, pos);
-    keepCaretVisible();
     onInput();
+    keepCaretVisible();
   }
   function backspace(){
     var s = editor.selectionStart, e = editor.selectionEnd;
     if(s !== e){ editor.value = editor.value.slice(0, s) + editor.value.slice(e); editor.setSelectionRange(s, s); }
     else if(s > 0){ editor.value = editor.value.slice(0, s - 1) + editor.value.slice(s); editor.setSelectionRange(s - 1, s - 1); }
-    keepCaretVisible();
     onInput();
+    keepCaretVisible();
   }
   function moveCaret(d){
     var p = Math.max(0, Math.min(editor.value.length, editor.selectionStart + d));
     editor.setSelectionRange(p, p);
     keepCaretVisible();
   }
+  // Scroll so the caret's line is visible. Uses the mirror to account for wrapping.
   function keepCaretVisible(){
-    var cs = getComputedStyle(editor);
-    var lh = parseFloat(cs.lineHeight) || 32;
+    var cs = syncMirror();
     var padTop = parseFloat(cs.paddingTop) || 0;
-    var line = editor.value.slice(0, editor.selectionStart).split('\n').length - 1;
-    var caretTop = padTop + line * lh;
-    var caretBottom = caretTop + lh;
+    var upto = editor.value.slice(0, editor.selectionStart);
+    var lines = upto.split('\n');
+    var caretLineText = lines[lines.length - 1];
+    var beforeLines = lines.slice(0, lines.length - 1);
+    var html = '';
+    for(var i=0;i<beforeLines.length;i++){ html += '<div>'+(beforeLines[i].length?escapeHtml(beforeLines[i]):'​')+'</div>'; }
+    html += '<div id="mcaret">'+(caretLineText.length?escapeHtml(caretLineText):'​')+'</div>';
+    mirror.innerHTML = html;
+    var cl = document.getElementById('mcaret');
+    var caretTop = padTop + cl.offsetTop;
+    var caretBottom = caretTop + cl.offsetHeight;
     var viewTop = editor.scrollTop;
     var viewBottom = viewTop + editor.clientHeight;
     if(caretTop < viewTop){ editor.scrollTop = caretTop; }
@@ -572,6 +638,7 @@
     btnMode.textContent = on ? '123' : 'ABC';
     editor.blur();
     editor.focus();
+    render();
   }
   function toggleMode(){ setTextMode(!textMode); }
 
