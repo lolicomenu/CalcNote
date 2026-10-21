@@ -1,4 +1,4 @@
-var CACHE = 'notecalc-v2';
+var CACHE = 'notecalc-v3';
 var ASSETS = [
   './',
   './index.html',
@@ -30,3 +30,4 @@ self.addEventListener('fetch', function (e) {
     })
   );
 });
+
