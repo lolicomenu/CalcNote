@@ -21,7 +21,7 @@
     --muted: #7c8391;
     --accent: #63d0a0;
     --error: #e06a6a;
-    --gutter-w: 118px;
+    --gutter-w: clamp(132px, 38vw, 190px);
   }
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body{ margin:0; height:100%; background:var(--bg); color:var(--text);
@@ -38,9 +38,15 @@
   header .spacer{ flex:1; }
   header button{
     background:transparent; color:var(--muted); border:1px solid var(--line);
-    border-radius:8px; padding:6px 10px; font-size:13px; cursor:pointer;
+    border-radius:8px; padding:6px 10px; font-size:13px; cursor:pointer; white-space:nowrap;
   }
   header button:active{ background:var(--line); color:var(--text); }
+  @media (max-width:420px){
+    header{ gap:5px; padding:9px 10px; }
+    header .brand{ font-size:15px; }
+    header button{ padding:6px 7px; font-size:12px; }
+    #btnSettings{ padding-left:8px; padding-right:8px; }
+  }
 
   #editorArea{ position:relative; flex:1 1 auto; overflow:hidden; }
   #editor, #gutter{
@@ -62,14 +68,23 @@
     padding:0;
     background:linear-gradient(90deg, transparent, rgba(0,0,0,.12) 24%);
     border-left:1px solid var(--line);
-    overflow:hidden; pointer-events:none;
+    overflow:hidden;
     text-align:right;
   }
   #gutterInner{ padding:var(--pad) 14px var(--pad) 8px; will-change:transform; }
   .rrow{ display:flex; align-items:flex-end; justify-content:flex-end;
     line-height:var(--lh); color:var(--accent); overflow:hidden; }
-  .rrow span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
+  .rrow button{ width:100%; min-width:0; padding:0; border:0; background:transparent;
+    color:inherit; font:inherit; line-height:inherit; text-align:right; white-space:nowrap;
+    cursor:pointer; touch-action:manipulation; }
+  .rrow button:active{ opacity:.55; }
   .rrow.err{ color:var(--error); font-size:13px; }
+
+  #toast{ position:absolute; left:50%; bottom:14px; z-index:30;
+    transform:translate(-50%, 8px); padding:8px 14px; border-radius:999px;
+    background:#e6e8ec; color:#16181d; font-size:13px; font-weight:700;
+    opacity:0; pointer-events:none; transition:opacity .16s, transform .16s; }
+  #toast.show{ opacity:1; transform:translate(-50%, 0); }
 
   /* hidden mirror used to measure each logical line's wrapped height */
   #mirror{
@@ -119,6 +134,27 @@
   #help td.k{ color:var(--accent); font-family:monospace; white-space:nowrap; }
   #help .close{ margin-top:14px; width:100%; padding:10px; border-radius:9px;
     background:var(--accent); color:#06231a; border:0; font-weight:700; font-size:14px; }
+
+  /* settings overlay */
+  #settings{ position:absolute; inset:0; background:rgba(0,0,0,.55);
+    display:none; align-items:center; justify-content:center; padding:18px; z-index:20; }
+  #settings.open{ display:flex; }
+  #settings .card{ background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    max-width:420px; width:100%; padding:18px 20px; }
+  #settings h2{ margin:0 0 16px; font-size:16px; }
+  .settingRow{ display:flex; align-items:center; gap:16px; }
+  .settingText{ flex:1; }
+  .settingText b{ display:block; font-size:14px; }
+  .settingText small{ display:block; margin-top:3px; color:var(--muted); }
+  .switch{ position:relative; width:48px; height:28px; flex:0 0 auto; }
+  .switch input{ position:absolute; opacity:0; }
+  .switch span{ display:block; height:100%; border-radius:999px; background:#3a3f4b; transition:.18s; }
+  .switch span:after{ content:""; display:block; width:22px; height:22px; border-radius:50%;
+    background:#fff; transform:translate(3px,3px); transition:.18s; }
+  .switch input:checked + span{ background:var(--accent); }
+  .switch input:checked + span:after{ transform:translate(23px,3px); }
+  #btnSettingsClose{ margin-top:18px; width:100%; padding:10px; border-radius:9px;
+    background:var(--accent); color:#06231a; border:0; font-weight:700; font-size:14px; }
 </style>
 </head>
 <body>
@@ -127,6 +163,7 @@
     <div class="brand">Note<span>Calc</span></div>
     <div class="spacer"></div>
     <button id="btnMode">ABC</button>
+    <button id="btnSettings" aria-label="設定" title="設定">&#9881;</button>
     <button id="btnHelp">使い方</button>
     <button id="btnClear">クリア</button>
   </header>
@@ -135,8 +172,9 @@
     <textarea id="editor" spellcheck="false" autocomplete="off"
       autocapitalize="off" autocorrect="off"
       inputmode="none" placeholder="1行に1つの式を入力…"></textarea>
-    <div id="gutter" aria-hidden="true"><div id="gutterInner"></div></div>
+    <div id="gutter" aria-label="計算結果。タップでコピー"><div id="gutterInner"></div></div>
     <div id="mirror" aria-hidden="true"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
   </div>
 
   <footer>
@@ -202,6 +240,23 @@
         <tr><td class="k">ABC</td><td>キーを押すと日本語入力用のキーボードに切替</td></tr>
       </table>
       <button class="close" id="btnHelpClose">閉じる</button>
+    </div>
+  </div>
+
+  <div id="settings">
+    <div class="card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <h2 id="settingsTitle">設定</h2>
+      <div class="settingRow">
+        <div class="settingText">
+          <b>タッチ時のバイブ</b>
+          <small>電卓キーを押したときに短く振動します</small>
+        </div>
+        <label class="switch">
+          <input id="hapticToggle" type="checkbox">
+          <span aria-hidden="true"></span>
+        </label>
+      </div>
+      <button id="btnSettingsClose">閉じる</button>
     </div>
   </div>
 </div>
@@ -486,10 +541,45 @@
   var statSum = document.getElementById('statSum');
   var statLines = document.getElementById('statLines');
   var help = document.getElementById('help');
+  var settings = document.getElementById('settings');
+  var hapticToggle = document.getElementById('hapticToggle');
+  var toast = document.getElementById('toast');
   var keypad = document.getElementById('keypad');
   var btnMode = document.getElementById('btnMode');
   var abcBtn = keypad.querySelector('.abc');
   var STORE_KEY = 'notecalc.buffer.v1';
+  var HAPTIC_KEY = 'notecalc.haptic.v1';
+  var hapticEnabled = true;
+  var toastTimer = 0;
+
+  try{ hapticEnabled = localStorage.getItem(HAPTIC_KEY) !== 'false'; }catch(e){}
+  hapticToggle.checked = hapticEnabled;
+
+  function haptic(){
+    if(hapticEnabled && navigator.vibrate) navigator.vibrate(8);
+  }
+
+  function showToast(message){
+    toast.textContent = message;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 1300);
+  }
+
+  function copyText(text){
+    if(navigator.clipboard && window.isSecureContext){
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function(resolve, reject){
+      var input = document.createElement('textarea');
+      input.value = text;
+      input.style.position = 'fixed'; input.style.opacity = '0';
+      document.body.appendChild(input); input.select();
+      try{ document.execCommand('copy') ? resolve() : reject(new Error('copy failed')); }
+      catch(e){ reject(e); }
+      document.body.removeChild(input);
+    });
+  }
 
   var SAMPLE =
     "// NoteCalc — 1行1式で計算\n" +
@@ -560,17 +650,32 @@
       if(r.empty){ html += '<div class="rrow" style="height:'+h+'px"></div>'; continue; }
       if(r.ok){
         var txt = NoteCalc.formatNumber(r.value);
-        html += '<div class="rrow" style="height:'+h+'px"><span>'+escapeHtml(txt)+'</span></div>';
+        html += '<div class="rrow" style="height:'+h+'px"><button type="button" data-result="'+escapeHtml(txt)+'" aria-label="'+escapeHtml(txt)+' をコピー">'+escapeHtml(txt)+'</button></div>';
         grand += r.value; count++;
       }else{
         html += '<div class="rrow err" style="height:'+h+'px"><span>?</span></div>';
       }
     }
     gutter.innerHTML = html;
+    fitResults();
     syncScroll();
     statSum.textContent = NoteCalc.formatNumber(count ? grand : 0);
     var lineCount = editor.value === '' ? 0 : editor.value.split('\n').length;
     statLines.textContent = lineCount + ' 行';
+  }
+
+  function fitResults(){
+    var buttons = gutter.querySelectorAll('[data-result]');
+    for(var i=0;i<buttons.length;i++){
+      var b = buttons[i];
+      b.style.fontSize = '';
+      var available = b.clientWidth;
+      var needed = b.scrollWidth;
+      if(needed > available && available > 0){
+        var base = parseFloat(getComputedStyle(b).fontSize) || 17;
+        b.style.fontSize = Math.max(9, Math.floor(base * available / needed)) + 'px';
+      }
+    }
   }
 
   function syncScroll(){ gutter.style.transform = 'translateY(' + (-editor.scrollTop) + 'px)'; }
@@ -648,6 +753,7 @@
     var b = e.target.closest('button');
     if(!b) return;
     e.preventDefault();
+    haptic();
     if(!textMode) editor.focus();
     if(b.dataset.mode){ toggleMode(); return; }
     if(b.dataset.ins != null){ insertText(b.dataset.ins); return; }
@@ -655,6 +761,23 @@
     if(b.dataset.caret){ moveCaret(parseInt(b.dataset.caret, 10)); return; }
     if(b.dataset.newline){ insertText('\n'); scrollCaretIntoViewDeferred(); return; }
   });
+
+  gutter.addEventListener('click', function(e){
+    var b = e.target.closest('[data-result]');
+    if(!b) return;
+    haptic();
+    copyText(b.dataset.result).then(function(){ showToast('コピーしました'); })
+      .catch(function(){ showToast('コピーできませんでした'); });
+  });
+
+  hapticToggle.addEventListener('change', function(){
+    hapticEnabled = hapticToggle.checked;
+    try{ localStorage.setItem(HAPTIC_KEY, String(hapticEnabled)); }catch(e){}
+    if(hapticEnabled) haptic();
+  });
+  document.getElementById('btnSettings').addEventListener('click', function(){ settings.classList.add('open'); });
+  document.getElementById('btnSettingsClose').addEventListener('click', function(){ settings.classList.remove('open'); });
+  settings.addEventListener('click', function(e){ if(e.target === settings) settings.classList.remove('open'); });
 
   document.getElementById('btnClear').addEventListener('click', function(){
     if(editor.value.trim() === '' || confirm('ノートを消去しますか?')){
@@ -682,3 +805,4 @@ if ('serviceWorker' in navigator) {
 </script>
 </body>
 </html>
+
