@@ -20,8 +20,33 @@
     --text: #e6e8ec;
     --muted: #7c8391;
     --accent: #63d0a0;
+    --accent-text: #06231a;
     --error: #e06a6a;
+    --key: #2a2e37;
+    --key-active: #3a3f4b;
+    --key-util: #242832;
+    --key-op: #2f3540;
+    --overlay: rgba(0,0,0,.55);
+    --toast-bg: #e6e8ec;
+    --toast-text: #16181d;
     --gutter-w: clamp(132px, 38vw, 190px);
+  }
+  :root[data-theme="light"]{
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --line: #d9dde5;
+    --text: #20242b;
+    --muted: #687181;
+    --accent: #087f5b;
+    --accent-text: #ffffff;
+    --error: #c92a2a;
+    --key: #ffffff;
+    --key-active: #e8ebf0;
+    --key-util: #eef1f5;
+    --key-op: #e5f3ee;
+    --overlay: rgba(25,30,38,.38);
+    --toast-bg: #20242b;
+    --toast-text: #ffffff;
   }
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body{ margin:0; height:100%; background:var(--bg); color:var(--text);
@@ -82,7 +107,7 @@
 
   #toast{ position:absolute; left:50%; bottom:14px; z-index:30;
     transform:translate(-50%, 8px); padding:8px 14px; border-radius:999px;
-    background:#e6e8ec; color:#16181d; font-size:13px; font-weight:700;
+    background:var(--toast-bg); color:var(--toast-text); font-size:13px; font-weight:700;
     opacity:0; pointer-events:none; transition:opacity .16s, transform .16s; }
   #toast.show{ opacity:1; transform:translate(-50%, 0); }
 
@@ -111,19 +136,19 @@
   #keypad .krow:last-child{ margin-bottom:0; }
   #keypad button{
     flex:1 1 0; min-width:0; height:46px; border:0; border-radius:10px;
-    background:#2a2e37; color:var(--text); font-size:19px; font-weight:500;
+    background:var(--key); color:var(--text); font-size:19px; font-weight:500;
     font-family:inherit; cursor:pointer; touch-action:manipulation;
     display:flex; align-items:center; justify-content:center;
   }
-  #keypad button:active{ background:#3a3f4b; }
-  #keypad button.util{ height:38px; background:#242832; color:var(--muted);
+  #keypad button:active{ background:var(--key-active); }
+  #keypad button.util{ height:38px; background:var(--key-util); color:var(--muted);
     font-size:14px; font-weight:400; }
-  #keypad button.op{ background:#2f3540; color:var(--accent); font-size:20px; }
-  #keypad button.act{ background:var(--accent); color:#06231a; font-weight:700; }
-  #keypad button.abc.on{ background:var(--accent); color:#06231a; }
+  #keypad button.op{ background:var(--key-op); color:var(--accent); font-size:20px; }
+  #keypad button.act{ background:var(--accent); color:var(--accent-text); font-weight:700; }
+  #keypad button.abc.on{ background:var(--accent); color:var(--accent-text); }
 
   /* help overlay */
-  #help{ position:absolute; inset:0; background:rgba(0,0,0,.55);
+  #help{ position:absolute; inset:0; background:var(--overlay);
     display:none; align-items:center; justify-content:center; padding:18px; z-index:20; }
   #help.open{ display:flex; }
   #help .card{ background:var(--panel); border:1px solid var(--line); border-radius:14px;
@@ -133,16 +158,17 @@
   #help td{ padding:5px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
   #help td.k{ color:var(--accent); font-family:monospace; white-space:nowrap; }
   #help .close{ margin-top:14px; width:100%; padding:10px; border-radius:9px;
-    background:var(--accent); color:#06231a; border:0; font-weight:700; font-size:14px; }
+    background:var(--accent); color:var(--accent-text); border:0; font-weight:700; font-size:14px; }
 
   /* settings overlay */
-  #settings{ position:absolute; inset:0; background:rgba(0,0,0,.55);
+  #settings{ position:absolute; inset:0; background:var(--overlay);
     display:none; align-items:center; justify-content:center; padding:18px; z-index:20; }
   #settings.open{ display:flex; }
   #settings .card{ background:var(--panel); border:1px solid var(--line); border-radius:14px;
     max-width:420px; width:100%; padding:18px 20px; }
   #settings h2{ margin:0 0 16px; font-size:16px; }
   .settingRow{ display:flex; align-items:center; gap:16px; }
+  .settingRow + .settingRow{ margin-top:18px; padding-top:18px; border-top:1px solid var(--line); }
   .settingText{ flex:1; }
   .settingText b{ display:block; font-size:14px; }
   .settingText small{ display:block; margin-top:3px; color:var(--muted); }
@@ -153,8 +179,12 @@
     background:#fff; transform:translate(3px,3px); transition:.18s; }
   .switch input:checked + span{ background:var(--accent); }
   .switch input:checked + span:after{ transform:translate(23px,3px); }
+  .themeChoice{ display:flex; padding:3px; border-radius:9px; background:var(--key-util); }
+  .themeChoice button{ padding:7px 10px; border:0; border-radius:7px; background:transparent;
+    color:var(--muted); font:inherit; font-size:12px; cursor:pointer; }
+  .themeChoice button.active{ background:var(--accent); color:#fff; font-weight:700; }
   #btnSettingsClose{ margin-top:18px; width:100%; padding:10px; border-radius:9px;
-    background:var(--accent); color:#06231a; border:0; font-weight:700; font-size:14px; }
+    background:var(--accent); color:var(--accent-text); border:0; font-weight:700; font-size:14px; }
 </style>
 </head>
 <body>
@@ -246,6 +276,16 @@
   <div id="settings">
     <div class="card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
       <h2 id="settingsTitle">設定</h2>
+      <div class="settingRow">
+        <div class="settingText">
+          <b>表示テーマ</b>
+          <small>画面の明るさを切り替えます</small>
+        </div>
+        <div class="themeChoice" role="group" aria-label="表示テーマ">
+          <button id="themeDark" type="button">ダーク</button>
+          <button id="themeLight" type="button">ライト</button>
+        </div>
+      </div>
       <div class="settingRow">
         <div class="settingText">
           <b>タッチ時のバイブ</b>
@@ -549,11 +589,24 @@
   var abcBtn = keypad.querySelector('.abc');
   var STORE_KEY = 'notecalc.buffer.v1';
   var HAPTIC_KEY = 'notecalc.haptic.v1';
+  var THEME_KEY = 'notecalc.theme.v1';
   var hapticEnabled = true;
+  var currentTheme = 'dark';
   var toastTimer = 0;
 
   try{ hapticEnabled = localStorage.getItem(HAPTIC_KEY) !== 'false'; }catch(e){}
   hapticToggle.checked = hapticEnabled;
+  try{ currentTheme = localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'; }catch(e){}
+
+  function setTheme(theme, save){
+    currentTheme = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', currentTheme);
+    document.getElementById('themeDark').classList.toggle('active', currentTheme === 'dark');
+    document.getElementById('themeLight').classList.toggle('active', currentTheme === 'light');
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', currentTheme === 'light' ? '#ffffff' : '#16181d');
+    if(save){ try{ localStorage.setItem(THEME_KEY, currentTheme); }catch(e){} }
+  }
+  setTheme(currentTheme, false);
 
   function haptic(){
     if(hapticEnabled && navigator.vibrate) navigator.vibrate(8);
@@ -775,6 +828,8 @@
     try{ localStorage.setItem(HAPTIC_KEY, String(hapticEnabled)); }catch(e){}
     if(hapticEnabled) haptic();
   });
+  document.getElementById('themeDark').addEventListener('click', function(){ haptic(); setTheme('dark', true); });
+  document.getElementById('themeLight').addEventListener('click', function(){ haptic(); setTheme('light', true); });
   document.getElementById('btnSettings').addEventListener('click', function(){ settings.classList.add('open'); });
   document.getElementById('btnSettingsClose').addEventListener('click', function(){ settings.classList.remove('open'); });
   settings.addEventListener('click', function(e){ if(e.target === settings) settings.classList.remove('open'); });
